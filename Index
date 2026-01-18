@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>IPTV Player</title>
+
+<!-- ===== ESTILOS ===== -->
+<style>
+* {
+  box-sizing: border-box;
+  font-family: Arial, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #111;
+  color: #fff;
+}
+
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+.sidebar {
+  width: 300px;
+  background: #1c1c1c;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.sidebar h2 {
+  margin: 0 0 10px 0;
+  text-align: center;
+}
+
+.sidebar input {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 6px;
+  border: none;
+  border-radius: 4px;
+}
+
+#channelList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#channelList li {
+  padding: 6px;
+  cursor: pointer;
+  border-bottom: 1px solid #333;
+}
+
+#channelList li:hover {
+  background: #333;
+}
+
+.player {
+  flex: 1;
+  background: black;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+video {
+  width: 100%;
+  height: 100%;
+  background: black;
+}
+</style>
+</head>
+
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <h2>📺 IPTV</h2>
+
+    <input type="file" id="fileInput" accept=".m3u,.m3u8">
+    <input type="text" id="search" placeholder="Buscar canal...">
+
+    <ul id="channelList"></ul>
+  </aside>
+
+  <main class="player">
+    <video id="video" controls autoplay></video>
+  </main>
+</div>
+
+<!-- ===== HLS ===== -->
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+<!-- ===== APP ===== -->
+<script>
+const fileInput = document.getElementById("fileInput");
+const channelList = document.getElementById("channelList");
+const searchInput = document.getElementById("search");
+const video = document.getElementById("video");
+
+let channels = [];
+let hls = null;
+
+// Cargar archivo M3U
+fileInput.addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => parseM3U(reader.result);
+  reader.readAsText(file);
+});
+
+// Parsear M3U
+function parseM3U(text) {
+  channels = [];
+  const lines = text.split("\n");
+
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith("#EXTINF")) {
+      const name = lines[i].split(",")[1]?.trim() || "Canal";
+      const url = lines[i + 1]?.trim();
+      if (url && url.startsWith("http")) {
+        channels.push({ name, url });
+      }
+    }
+  }
+  renderList(channels);
+}
+
+// Mostrar lista
+function renderList(list) {
+  channelList.innerHTML = "";
+  list.forEach(ch => {
+    const li = document.createElement("li");
+    li.textContent = ch.name;
+    li.onclick = () => playChannel(ch.url);
+    channelList.appendChild(li);
+  });
+}
+
+// Reproducir canal
+function playChannel(url) {
+  if (hls) {
+    hls.destroy();
+    hls = null;
+  }
+
+  if (video.canPlayType("application/vnd.apple.mpegurl")) {
+    video.src = url;
+  } else if (Hls.isSupported()) {
+    hls = new Hls();
+    hls.loadSource(url);
+    hls.attachMedia(video);
+  } else {
+    alert("HLS no soportado en este navegador");
+  }
+}
+
+// Buscador
+searchInput.addEventListener("input", () => {
+  const q = searchInput.value.toLowerCase();
+  const filtered = channels.filter(c =>
+    c.name.toLowerCase().includes(q)
+  );
+  renderList(filtered);
+});
+</script>
+
+</body>
+</html>
