@@ -8,18 +8,20 @@
 *{box-sizing:border-box;font-family:Arial,sans-serif}
 body{margin:0;background:#111;color:#fff}
 .app{display:flex;height:100vh}
-.sidebar{width:300px;background:#1c1c1c;padding:10px;overflow-y:auto}
-.sidebar h2{text-align:center;margin:0 0 10px}
-.sidebar input, .sidebar button{
-  width:100%;margin-bottom:6px;padding:6px;border:none;border-radius:4px
-}
-.sidebar button{background:#444;color:#fff;cursor:pointer}
-.sidebar button:hover{background:#555}
-#channelList{list-style:none;padding:0;margin:0}
-#channelList li{padding:6px;cursor:pointer;border-bottom:1px solid #333}
-#channelList li:hover{background:#333}
+.sidebar{width:320px;background:#1c1c1c;padding:10px;overflow-y:auto}
+h2,h3{text-align:center;margin:6px 0}
+input,button{width:100%;margin-bottom:6px;padding:6px;border:none;border-radius:4px}
+button{background:#444;color:#fff;cursor:pointer}
+button:hover{background:#555}
+ul{list-style:none;padding:0;margin:0}
+li{padding:6px;border-bottom:1px solid #333}
+li:hover{background:#333}
+.channel{display:flex;justify-content:space-between;align-items:center}
+.channel span{cursor:pointer;flex:1}
+.controls button{width:auto;margin-left:4px;padding:2px 6px}
 .player{flex:1;background:black}
-video{width:100%;height:100%;background:black}
+video{width:100%;height:100%}
+.section{margin-bottom:10px;border-bottom:1px solid #333;padding-bottom:6px}
 </style>
 </head>
 
@@ -27,20 +29,27 @@ video{width:100%;height:100%;background:black}
 
 <div class="app">
   <aside class="sidebar">
+
     <h2>📺 IPTV</h2>
 
-    <!-- Cargar archivo -->
     <input type="file" id="fileInput" accept=".m3u,.m3u8">
+    <input type="text" id="urlInput" placeholder="Pegar URL M3U">
+    <button onclick="loadFromURL()">Cargar URL</button>
 
-    <!-- Cargar URL -->
-    <input type="text" id="urlInput" placeholder="Pegar enlace M3U...">
-    <button onclick="loadFromURL()">Cargar desde URL</button>
+    <input type="text" id="search" placeholder="Buscar canal">
 
-    <input type="text" id="search" placeholder="Buscar canal...">
+    <div class="section">
+      <h3>⭐ Favoritos</h3>
+      <ul id="favList"></ul>
+    </div>
 
-    <button onclick="clearSaved()">🗑 Borrar lista guardada</button>
+    <div class="section">
+      <h3>📃 Canales</h3>
+      <ul id="channelList"></ul>
+    </div>
 
-    <ul id="channelList"></ul>
+    <button onclick="clearAll()">🗑 Borrar todo</button>
+
   </aside>
 
   <main class="player">
@@ -51,108 +60,134 @@ video{width:100%;height:100%;background:black}
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 
 <script>
-const fileInput = document.getElementById("fileInput");
-const channelList = document.getElementById("channelList");
-const searchInput = document.getElementById("search");
-const video = document.getElementById("video");
-const urlInput = document.getElementById("urlInput");
-
 let channels = [];
+let favorites = [];
 let hls = null;
 
-// ===== Cargar desde archivo =====
-fileInput.addEventListener("change", e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    saveList(reader.result);
-    parseM3U(reader.result);
-  };
-  reader.readAsText(file);
-});
+const channelList = document.getElementById("channelList");
+const favList = document.getElementById("favList");
+const video = document.getElementById("video");
+const searchInput = document.getElementById("search");
 
-// ===== Cargar desde URL =====
-async function loadFromURL() {
-  const url = urlInput.value.trim();
-  if (!url) return alert("Pega una URL válida");
-
-  try {
-    const res = await fetch(url);
-    const text = await res.text();
-    saveList(text);
-    parseM3U(text);
-  } catch (e) {
-    alert("No se pudo cargar la lista (CORS o URL inválida)");
-  }
+// ===== Persistencia =====
+function saveState(){
+  localStorage.setItem("iptv_channels", JSON.stringify(channels));
+  localStorage.setItem("iptv_favs", JSON.stringify(favorites));
+}
+function loadState(){
+  channels = JSON.parse(localStorage.getItem("iptv_channels") || "[]");
+  favorites = JSON.parse(localStorage.getItem("iptv_favs") || "[]");
 }
 
-// ===== Guardar en local =====
-function saveList(text) {
-  localStorage.setItem("iptv_m3u", text);
-}
-
-// ===== Recuperar al abrir =====
-window.addEventListener("load", () => {
-  const saved = localStorage.getItem("iptv_m3u");
-  if (saved) parseM3U(saved);
-});
-
-// ===== Borrar =====
-function clearSaved() {
-  localStorage.removeItem("iptv_m3u");
-  channelList.innerHTML = "";
-  video.src = "";
-}
-
-// ===== Parsear M3U =====
-function parseM3U(text) {
-  channels = [];
-  const lines = text.split("\n");
-
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].startsWith("#EXTINF")) {
-      const name = lines[i].split(",")[1]?.trim() || "Canal";
-      const url = lines[i + 1]?.trim();
-      if (url && url.startsWith("http")) {
-        channels.push({ name, url });
-      }
+// ===== Cargar M3U =====
+function parseM3U(text){
+  channels=[];
+  const lines=text.split("\n");
+  for(let i=0;i<lines.length;i++){
+    if(lines[i].startsWith("#EXTINF")){
+      const name=lines[i].split(",")[1]?.trim()||"Canal";
+      const url=lines[i+1]?.trim();
+      if(url?.startsWith("http")) channels.push({name,url});
     }
   }
-  renderList(channels);
+  saveState();
+  render();
 }
 
-// ===== Mostrar lista =====
-function renderList(list) {
-  channelList.innerHTML = "";
-  list.forEach(ch => {
-    const li = document.createElement("li");
-    li.textContent = ch.name;
-    li.onclick = () => playChannel(ch.url);
-    channelList.appendChild(li);
+// ===== Render =====
+function render(){
+  renderList(channelList, channels, false);
+  renderList(favList, favorites, true);
+}
+
+function renderList(el, list, fav){
+  el.innerHTML="";
+  list.forEach((c,i)=>{
+    const li=document.createElement("li");
+    const div=document.createElement("div");
+    div.className="channel";
+
+    const span=document.createElement("span");
+    span.textContent=c.name;
+    span.onclick=()=>play(c.url);
+
+    const ctr=document.createElement("div");
+    ctr.className="controls";
+
+    if(!fav){
+      const star=btn("⭐",()=>addFav(i));
+      ctr.appendChild(star);
+    }
+
+    const up=btn("↑",()=>move(list,i,-1));
+    const down=btn("↓",()=>move(list,i,1));
+    const del=btn("❌",()=>remove(list,i));
+
+    ctr.append(up,down,del);
+    div.append(span,ctr);
+    li.appendChild(div);
+    el.appendChild(li);
   });
 }
 
-// ===== Reproducir =====
-function playChannel(url) {
-  if (hls) { hls.destroy(); hls = null; }
+function btn(t,fn){
+  const b=document.createElement("button");
+  b.textContent=t;b.onclick=fn;
+  return b;
+}
 
-  if (video.canPlayType("application/vnd.apple.mpegurl")) {
-    video.src = url;
-  } else if (Hls.isSupported()) {
-    hls = new Hls();
-    hls.loadSource(url);
-    hls.attachMedia(video);
-  } else {
-    alert("HLS no soportado");
+// ===== Acciones =====
+function play(url){
+  if(hls){hls.destroy();hls=null;}
+  if(video.canPlayType("application/vnd.apple.mpegurl")){
+    video.src=url;
+  }else if(Hls.isSupported()){
+    hls=new Hls();hls.loadSource(url);hls.attachMedia(video);
   }
 }
 
+function addFav(i){
+  favorites.push(channels[i]);
+  saveState();render();
+}
+function remove(list,i){
+  list.splice(i,1);
+  saveState();render();
+}
+function move(list,i,d){
+  const j=i+d;
+  if(j<0||j>=list.length)return;
+  [list[i],list[j]]=[list[j],list[i]];
+  saveState();render();
+}
+
+function clearAll(){
+  localStorage.clear();
+  channels=[];favorites=[];
+  render();
+}
+
 // ===== Buscador =====
-searchInput.addEventListener("input", () => {
-  const q = searchInput.value.toLowerCase();
-  renderList(channels.filter(c => c.name.toLowerCase().includes(q)));
+searchInput.addEventListener("input",()=>{
+  const q=searchInput.value.toLowerCase();
+  renderList(channelList,channels.filter(c=>c.name.toLowerCase().includes(q)),false);
 });
+
+// ===== Carga archivo / URL =====
+document.getElementById("fileInput").addEventListener("change",e=>{
+  const r=new FileReader();
+  r.onload=()=>parseM3U(r.result);
+  r.readAsText(e.target.files[0]);
+});
+
+async function loadFromURL(){
+  try{
+    const res=await fetch(document.getElementById("urlInput").value);
+    parseM3U(await res.text());
+  }catch{alert("No se pudo cargar la URL (CORS)");}
+}
+
+window.onload=()=>{loadState();render();}
 </script>
 
 </body>
