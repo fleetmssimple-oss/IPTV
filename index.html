@@ -8,7 +8,7 @@
 *{box-sizing:border-box;font-family:Arial,sans-serif}
 body{margin:0;background:#111;color:#fff}
 .app{display:flex;height:100vh}
-.sidebar{width:320px;background:#1c1c1c;padding:10px;overflow-y:auto}
+.sidebar{width:330px;background:#1c1c1c;padding:10px;overflow-y:auto}
 h2,h3{text-align:center;margin:6px 0}
 input,button{width:100%;margin-bottom:6px;padding:6px;border:none;border-radius:4px}
 button{background:#444;color:#fff;cursor:pointer}
@@ -32,19 +32,21 @@ video{width:100%;height:100%}
 
     <h2>📺 IPTV</h2>
 
-    <input type="file" id="fileInput" accept=".m3u,.m3u8">
-    <input type="text" id="urlInput" placeholder="Pegar URL M3U">
+    <input type="file" id="fileInput" accept=".m3u,.m3u8,.md">
+    <input type="text" id="urlInput" placeholder="Pegar URL M3U / MD">
     <button onclick="loadFromURL()">Cargar URL</button>
 
     <input type="text" id="search" placeholder="Buscar canal">
 
     <div class="section">
       <h3>⭐ Favoritos</h3>
+      <button onclick="exportMD(favorites,'favoritos.md')">⬇ Exportar favoritos (.md)</button>
       <ul id="favList"></ul>
     </div>
 
     <div class="section">
       <h3>📃 Canales</h3>
+      <button onclick="exportMD(channels,'canales.md')">⬇ Exportar canales (.md)</button>
       <ul id="channelList"></ul>
     </div>
 
@@ -60,26 +62,24 @@ video{width:100%;height:100%}
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 
 <script>
-let channels = [];
-let favorites = [];
-let hls = null;
+let channels=[],favorites=[],hls=null;
 
-const channelList = document.getElementById("channelList");
-const favList = document.getElementById("favList");
-const video = document.getElementById("video");
-const searchInput = document.getElementById("search");
+const channelList=document.getElementById("channelList");
+const favList=document.getElementById("favList");
+const video=document.getElementById("video");
+const searchInput=document.getElementById("search");
 
 // ===== Persistencia =====
 function saveState(){
-  localStorage.setItem("iptv_channels", JSON.stringify(channels));
-  localStorage.setItem("iptv_favs", JSON.stringify(favorites));
+  localStorage.setItem("iptv_channels",JSON.stringify(channels));
+  localStorage.setItem("iptv_favs",JSON.stringify(favorites));
 }
 function loadState(){
-  channels = JSON.parse(localStorage.getItem("iptv_channels") || "[]");
-  favorites = JSON.parse(localStorage.getItem("iptv_favs") || "[]");
+  channels=JSON.parse(localStorage.getItem("iptv_channels")||"[]");
+  favorites=JSON.parse(localStorage.getItem("iptv_favs")||"[]");
 }
 
-// ===== Cargar M3U =====
+// ===== Parsear M3U / MD =====
 function parseM3U(text){
   channels=[];
   const lines=text.split("\n");
@@ -90,55 +90,45 @@ function parseM3U(text){
       if(url?.startsWith("http")) channels.push({name,url});
     }
   }
-  saveState();
-  render();
+  saveState();render();
 }
 
 // ===== Render =====
 function render(){
-  renderList(channelList, channels, false);
-  renderList(favList, favorites, true);
+  renderList(channelList,channels,false);
+  renderList(favList,favorites,true);
 }
 
-function renderList(el, list, fav){
+function renderList(el,list,fav){
   el.innerHTML="";
   list.forEach((c,i)=>{
     const li=document.createElement("li");
-    const div=document.createElement("div");
-    div.className="channel";
+    const row=document.createElement("div");
+    row.className="channel";
 
-    const span=document.createElement("span");
-    span.textContent=c.name;
-    span.onclick=()=>play(c.url);
+    const name=document.createElement("span");
+    name.textContent=c.name;
+    name.onclick=()=>play(c.url);
 
     const ctr=document.createElement("div");
     ctr.className="controls";
 
-    if(!fav){
-      const star=btn("⭐",()=>addFav(i));
-      ctr.appendChild(star);
-    }
+    if(!fav) ctr.appendChild(btn("⭐",()=>addFav(i)));
+    ctr.append(btn("↑",()=>move(list,i,-1)));
+    ctr.append(btn("↓",()=>move(list,i,1)));
+    ctr.append(btn("❌",()=>remove(list,i)));
 
-    const up=btn("↑",()=>move(list,i,-1));
-    const down=btn("↓",()=>move(list,i,1));
-    const del=btn("❌",()=>remove(list,i));
-
-    ctr.append(up,down,del);
-    div.append(span,ctr);
-    li.appendChild(div);
+    row.append(name,ctr);
+    li.appendChild(row);
     el.appendChild(li);
   });
 }
 
-function btn(t,fn){
-  const b=document.createElement("button");
-  b.textContent=t;b.onclick=fn;
-  return b;
-}
+function btn(t,f){const b=document.createElement("button");b.textContent=t;b.onclick=f;return b}
 
-// ===== Acciones =====
+// ===== Player =====
 function play(url){
-  if(hls){hls.destroy();hls=null;}
+  if(hls){hls.destroy();hls=null}
   if(video.canPlayType("application/vnd.apple.mpegurl")){
     video.src=url;
   }else if(Hls.isSupported()){
@@ -146,26 +136,14 @@ function play(url){
   }
 }
 
-function addFav(i){
-  favorites.push(channels[i]);
-  saveState();render();
-}
-function remove(list,i){
-  list.splice(i,1);
-  saveState();render();
-}
+// ===== Acciones =====
+function addFav(i){favorites.push(channels[i]);saveState();render()}
+function remove(list,i){list.splice(i,1);saveState();render()}
 function move(list,i,d){
-  const j=i+d;
-  if(j<0||j>=list.length)return;
-  [list[i],list[j]]=[list[j],list[i]];
-  saveState();render();
+  const j=i+d;if(j<0||j>=list.length)return;
+  [list[i],list[j]]=[list[j],list[i]];saveState();render();
 }
-
-function clearAll(){
-  localStorage.clear();
-  channels=[];favorites=[];
-  render();
-}
+function clearAll(){localStorage.clear();channels=[];favorites=[];render()}
 
 // ===== Buscador =====
 searchInput.addEventListener("input",()=>{
@@ -173,10 +151,9 @@ searchInput.addEventListener("input",()=>{
   renderList(channelList,channels.filter(c=>c.name.toLowerCase().includes(q)),false);
 });
 
-// ===== Carga archivo / URL =====
+// ===== Cargas =====
 document.getElementById("fileInput").addEventListener("change",e=>{
-  const r=new FileReader();
-  r.onload=()=>parseM3U(r.result);
+  const r=new FileReader();r.onload=()=>parseM3U(r.result);
   r.readAsText(e.target.files[0]);
 });
 
@@ -184,10 +161,24 @@ async function loadFromURL(){
   try{
     const res=await fetch(document.getElementById("urlInput").value);
     parseM3U(await res.text());
-  }catch{alert("No se pudo cargar la URL (CORS)");}
+  }catch{alert("No se pudo cargar (CORS o URL inválida)")}
 }
 
-window.onload=()=>{loadState();render();}
+// ===== Exportar a MD =====
+function exportMD(list,filename){
+  let md="#EXTM3U\n\n";
+  list.forEach(c=>{
+    md+=`#EXTINF:-1,${c.name}\n${c.url}\n\n`;
+  });
+  const blob=new Blob([md],{type:"text/markdown"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=filename;
+  a.click();
+}
+
+// ===== Init =====
+window.onload=()=>{loadState();render()}
 </script>
 
 </body>
